@@ -12,7 +12,7 @@
 		"sources": "https://disruptioncomplex.com/"
 	},
 	"license": "CC0-1.0",
-	"icon": "assets/murkys-many-apis/icon.png",
+	"icon": "assets/murkys-many-apis/MMA_icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
