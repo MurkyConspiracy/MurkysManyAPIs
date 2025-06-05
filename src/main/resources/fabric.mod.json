@@ -1,0 +1,40 @@
+{
+	"schemaVersion": 1,
+	"id": "murkys-many-apis",
+	"version": "${version}",
+	"name": "Murkys Many APIs",
+	"description": "You want an API? Well you can have it!",
+	"authors": [
+		"MurkyConspiracy"
+	],
+	"contact": {
+		"homepage": "https://disruptioncomplex.com/",
+		"sources": "https://disruptioncomplex.com/"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/murkys-many-apis/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.disruptioncomplex.MurkysManyAPIs"
+		],
+		"client": [
+			"com.disruptioncomplex.MurkysManyAPIsClient"
+		],
+		"fabric-datagen": [
+			"com.disruptioncomplex.MurkysManyAPIsDataGenerator"
+		]
+	},
+	"mixins": [
+			"murkysmanyapis.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.16.14",
+		"minecraft": "~1.21.5",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}

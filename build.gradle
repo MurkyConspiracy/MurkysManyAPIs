@@ -1,0 +1,39 @@
+plugins {
+    id 'fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+// Determine version based on git
+def getVersionName() {
+    def baseVersion = project.mod_version
+    
+    // Get Git hash
+    def gitHash = providers.exec {
+        commandLine 'git', 'rev-parse', '--short', 'HEAD'
+        standardOutput = new ByteArrayOutputStream()
+        ignoreExitValue = true
+    }.standardOutput.asText.get().trim()
+    
+    // Count commits for build number
+    def commitCount = providers.exec {
+        commandLine 'git', 'rev-list', '--count', 'HEAD'
+        standardOutput = new ByteArrayOutputStream()
+        ignoreExitValue = true
+    }.standardOutput.asText.get().trim()
+    
+    // If git commands failed, use a fallback
+    if (gitHash.isEmpty() || commitCount.isEmpty()) {
+        return "${baseVersion}+local"
+    }
+    
+    return "${baseVersion}+${commitCount}.${gitHash}"
+}
+
+version = getVersionName()
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+// Rest of your build.gradle content remains the same
