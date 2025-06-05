@@ -3,37 +3,134 @@ plugins {
     id 'maven-publish'
 }
 
-// Determine version based on git
-def getVersionName() {
-    def baseVersion = project.mod_version
+// Function to increment the patch version directly
+def getIncrementedVersion() {
+    def propertiesFile = file('gradle.properties')
+    def props = new Properties()
+    propertiesFile.withInputStream { props.load(it) }
     
-    // Get Git hash
-    def gitHash = providers.exec {
-        commandLine 'git', 'rev-parse', '--short', 'HEAD'
-        standardOutput = new ByteArrayOutputStream()
-        ignoreExitValue = true
-    }.standardOutput.asText.get().trim()
+    // Get current version and parse it
+    def currentVersion = props.getProperty('mod_version')
+    def versionParts = currentVersion.split('\\.')
     
-    // Count commits for build number
-    def commitCount = providers.exec {
-        commandLine 'git', 'rev-list', '--count', 'HEAD'
-        standardOutput = new ByteArrayOutputStream()
-        ignoreExitValue = true
-    }.standardOutput.asText.get().trim()
+    // Increment the patch version (last number)
+    def major = versionParts[0] as int
+    def minor = versionParts[1] as int
+    def patch = (versionParts.length > 2 ? versionParts[2] as int : 0) + 1
     
-    // If git commands failed, use a fallback
-    if (gitHash.isEmpty() || commitCount.isEmpty()) {
-        return "${baseVersion}+local"
+    // Create new version
+    def newVersion = "${major}.${minor}.${patch}"
+    
+    // Update the gradle.properties file
+    props.setProperty('mod_version', newVersion)
+    propertiesFile.withOutputStream { 
+        props.store(it, "Gradle properties - auto-updated mod_version")
     }
     
-    return "${baseVersion}+${commitCount}.${gitHash}"
+    return newVersion
 }
 
-version = getVersionName()
+// Create a task to increment version only when building
+tasks.register('incrementVersion') {
+    doLast {
+        def newVersion = getIncrementedVersion()
+        project.version = newVersion
+        println "Version incremented to: ${newVersion}"
+    }
+}
+
+// Make build depend on incrementVersion
+tasks.named('build') {
+    dependsOn 'incrementVersion'
+}
+
+// For other tasks, use the current version from properties
+version = project.mod_version
 group = project.maven_group
 
 base {
     archivesName = project.archives_base_name
 }
 
-// Rest of your build.gradle content remains the same
+repositories {
+    // Add repositories to retrieve artifacts from in here.
+    // You should only use this when depending on other mods because
+    // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+    // See https://docs.gradle.org/current/userguide/declaring_repositories.html
+    // for more information about repositories.
+}
+
+loom {
+    splitEnvironmentSourceSets()
+
+    mods {
+        "murkysmanyapis" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+fabricApi {
+    configureDataGeneration {
+        client = true
+    }
+}
+
+dependencies {
+    // To change the versions see the gradle.properties file
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Fabric API. This is technically optional, but you probably want it anyway.
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 21
+}
+
+java {
+    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+    // if it is present.
+    // If you remove this line, sources will not be generated.
+    withSourcesJar()
+
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    inputs.property "archivesName", project.base.archivesName
+
+    from("LICENSE") {
+        rename { "${it}_${inputs.properties.archivesName}"}
+    }
+}
+
+// configure the maven publication
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.archives_base_name
+            from components.java
+        }
+    }
+
+    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+    repositories {
+        // Add repositories to publish to here.
+        // Notice: This block does NOT have the same function as the block in the top level.
+        // The repositories here will be used for publishing your artifact, not for
+        // retrieving dependencies.
+    }
+}

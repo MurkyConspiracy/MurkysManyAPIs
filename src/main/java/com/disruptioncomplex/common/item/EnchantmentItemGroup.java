@@ -39,10 +39,7 @@ public class EnchantmentItemGroup {
             Identifier.of(MurkysManyAPIs.MOD_ID, "shared_enchantments"),
             FabricItemGroup.builder().icon(() -> new ItemStack(Items.ENCHANTED_BOOK))
                     .displayName(Text.translatable("itemgroup.murkys-common-lib.shared_enchantments"))
-                    .entries( (displayContext, entries) -> {
-                        addAllEnchantedBooks(displayContext, entries);
-                        entries.add(Items.FLOW_BANNER_PATTERN);
-                    }).build());
+                    .entries(EnchantmentItemGroup::addAllEnchantedBooks).build());
 
 
     private static void addAllEnchantedBooks(ItemGroup.DisplayContext displayContext, ItemGroup.Entries entries) {

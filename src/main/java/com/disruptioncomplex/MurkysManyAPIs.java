@@ -2,6 +2,7 @@ package com.disruptioncomplex;
 
 import com.disruptioncomplex.common.item.EnchantmentItemGroup;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.loader.api.FabricLoader;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,9 +20,10 @@ public class MurkysManyAPIs implements ModInitializer {
 		// This code runs as soon as Minecraft is in a mod-load-ready state.
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
-
-		LOGGER.info("Murky has Many APIs!");
-
 		EnchantmentItemGroup.registerItemGroups();
+
+		// Get version from FabricLoader
+		LOGGER.info("Murky has Many APIs! This one is version: {}", FabricLoader.getInstance().getModContainer(MOD_ID).isPresent() ? FabricLoader.getInstance().getModContainer(MOD_ID).get().getMetadata().getVersion().getFriendlyString(): "Unknown?!?!");
+
 	}
 }
