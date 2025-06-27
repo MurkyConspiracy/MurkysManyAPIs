@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version "${loom_version}"
     id 'maven-publish'
+    id 'signing'
 }
 
 // Function to increment the patch version directly
@@ -8,25 +9,25 @@ def getIncrementedVersion() {
     def propertiesFile = file('gradle.properties')
     def props = new Properties()
     propertiesFile.withInputStream { props.load(it) }
-    
+
     // Get current version and parse it
     def currentVersion = props.getProperty('mod_version')
     def versionParts = currentVersion.split('\\.')
-    
+
     // Increment the patch version (last number)
     def major = versionParts[0] as int
     def minor = versionParts[1] as int
     def patch = (versionParts.length > 2 ? versionParts[2] as int : 0) + 1
-    
+
     // Create new version
     def newVersion = "${major}.${minor}.${patch}"
-    
+
     // Update the gradle.properties file
     props.setProperty('mod_version', newVersion)
-    propertiesFile.withOutputStream { 
+    propertiesFile.withOutputStream {
         props.store(it, "Gradle properties - auto-updated mod_version")
     }
-    
+
     return newVersion
 }
 
@@ -58,6 +59,14 @@ repositories {
     // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html
     // for more information about repositories.
+    maven {
+        name = "GitHubPackages"
+        url = "https://maven.pkg.github.com/MurkyConspiracy/MurkysManyAPIs"
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
 }
 
 loom {
@@ -113,7 +122,7 @@ jar {
     inputs.property "archivesName", project.base.archivesName
 
     from("LICENSE") {
-        rename { "${it}_${inputs.properties.archivesName}"}
+        rename { "${it}_${inputs.properties.archivesName}" }
     }
 }
 
@@ -121,16 +130,122 @@ jar {
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
+            groupId = project.maven_group
             artifactId = project.archives_base_name
+            version = project.version
+            
             from components.java
+            
+            pom {
+                name = 'Murky\'s Many APIs'
+                description = 'A Fabric mod providing various APIs'
+                url = 'https://github.com/MurkyConspiracy/MurkysManyAPIs'
+                
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                
+                developers {
+                    developer {
+                        id = 'MurkyConspiracy'
+                        name = 'Laura'
+                        email = 'nickreeder43@gmail.com'
+                    }
+                }
+                
+                scm {
+                    connection = 'scm:git:git://github.com/MurkyConspiracy/MurkysManyAPIs.git'
+                    developerConnection = 'scm:git:ssh://github.com/MurkyConspiracy/MurkysManyAPIs.git'
+                    url = 'https://github.com/MurkyConspiracy/MurkysManyAPIs'
+                }
+            }
         }
     }
-
-    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+    
     repositories {
-        // Add repositories to publish to here.
-        // Notice: This block does NOT have the same function as the block in the top level.
-        // The repositories here will be used for publishing your artifact, not for
-        // retrieving dependencies.
+        maven {
+            name = "OSSRH"
+            url = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+            credentials {
+                username = System.getenv("MAVEN_USERNAME")
+                password = System.getenv("MAVEN_PASSWORD")
+            }
+        }
+        maven {
+            name = "GitHubPackages"
+            url = "https://maven.pkg.github.com/MurkyConspiracy/MurkysManyAPIs"
+            credentials {
+                username = System.getenv("GITHUB_ACTOR")
+                password = System.getenv("GITHUB_TOKEN")
+            }
+        }
     }
+}
+
+// Add after the publishing block
+signing {
+    if (project.hasProperty("signing.keyId")) {
+        sign publishing.publications.mavenJava
+    } else {
+        def keyId = System.getenv("GPG_KEY_ID")
+        def password = System.getenv("GPG_PASSPHRASE")
+        
+        if (keyId && password) {
+            useGpgCmd()
+            sign publishing.publications.mavenJava
+        }
+    }
+}
+
+// Add this task to check environment variables
+tasks.register('checkEnvVars') {
+    doLast {
+        // Check Maven credentials
+        def mavenUsername = System.getenv("MAVEN_USERNAME")
+        def mavenPassword = System.getenv("MAVEN_PASSWORD")
+        
+        println "=== Environment Variables Check ==="
+        println "MAVEN_USERNAME: ${mavenUsername ? 'Found' : 'NOT FOUND'}"
+        println "MAVEN_PASSWORD: ${mavenPassword ? 'Found' : 'NOT FOUND'}"
+        
+        // Check GitHub credentials
+        def githubActor = System.getenv("GITHUB_ACTOR")
+        def githubToken = System.getenv("GITHUB_TOKEN")
+        
+        println "GITHUB_ACTOR: ${githubActor ? 'Found' : 'NOT FOUND'}"
+        println "GITHUB_TOKEN: ${githubToken ? 'Found' : 'NOT FOUND'}"
+        
+        // Check GPG credentials
+        def gpgKeyId = System.getenv("GPG_KEY_ID")
+        def gpgPassphrase = System.getenv("GPG_PASSPHRASE")
+        
+        println "GPG_KEY_ID: ${gpgKeyId ? 'Found' : 'NOT FOUND'}"
+        println "GPG_PASSPHRASE: ${gpgPassphrase ? 'Found' : 'NOT FOUND'}"
+        println "==================================="
+    }
+}
+
+// Make all publishing-related tasks depend on checkEnvVars
+tasks.withType(PublishToMavenRepository) {
+    dependsOn 'checkEnvVars'
+}
+
+tasks.withType(PublishToMavenLocal) {
+    dependsOn 'checkEnvVars'
+}
+
+// Also make the general publish task depend on it
+tasks.named('publish') {
+    dependsOn 'checkEnvVars'
+}
+
+// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+repositories {
+    // Add repositories to publish to here.
+    // Notice: This block does NOT have the same function as the block in the top level.
+    // The repositories here will be used for publishing your artifact, not for
+    // retrieving dependencies.
 }
