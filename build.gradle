@@ -31,22 +31,21 @@ def getIncrementedVersion() {
     return newVersion
 }
 
-// Create a task to increment version only when building
-tasks.register('incrementVersion') {
-    doLast {
-        def newVersion = getIncrementedVersion()
-        project.version = newVersion
-        println "Version incremented to: ${newVersion}"
-    }
+// Remove the existing incrementVersion task and its dependency
+
+// Instead, increment version at configuration time when building
+if (gradle.startParameter.taskNames.contains('build') || 
+    gradle.startParameter.taskNames.any { it.contains('publish') }) {
+    version = getIncrementedVersion()
+} else {
+    version = project.mod_version
 }
 
-// Make build depend on incrementVersion
-tasks.named('build') {
-    dependsOn 'incrementVersion'
-}
+// Remove these lines:
+// tasks.register('incrementVersion') { ... }
+// tasks.named('build') { dependsOn 'incrementVersion' }
 
 // For other tasks, use the current version from properties
-version = project.mod_version
 group = project.maven_group
 
 base {
@@ -108,11 +107,23 @@ tasks.withType(JavaCompile).configureEach {
     it.options.release = 21
 }
 
+// Generate checksums for all JAR artifacts
+tasks.withType(Jar).configureEach { jarTask ->
+    jarTask.doLast {
+        def jarFile = jarTask.archiveFile.get().asFile
+        if (jarFile.exists()) {
+            ant.checksum(algorithm: 'md5', file: jarFile)
+            ant.checksum(algorithm: 'sha1', file: jarFile)
+            println "Generated checksums for: ${jarFile.name}"
+        }
+    }
+}
 java {
     // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
     // if it is present.
     // If you remove this line, sources will not be generated.
     withSourcesJar()
+    withJavadocJar()
 
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
@@ -135,6 +146,12 @@ publishing {
             version = project.version
             
             from components.java
+            
+            // Debug output
+            println "Creating publication with:"
+            println "  GroupId: ${groupId}"
+            println "  ArtifactId: ${artifactId}"
+            println "  Version: ${version}"
             
             pom {
                 name = 'Murky\'s Many APIs'
@@ -168,7 +185,7 @@ publishing {
     repositories {
         maven {
             name = "OSSRH"
-            url = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+            url = "https://repo1.maven.org/maven2/org/sonatype/central/"
             credentials {
                 username = System.getenv("MAVEN_USERNAME")
                 password = System.getenv("MAVEN_PASSWORD")
@@ -182,65 +199,43 @@ publishing {
                 password = System.getenv("GITHUB_TOKEN")
             }
         }
-    }
-}
-
-// Add after the publishing block
-signing {
-    if (project.hasProperty("signing.keyId")) {
-        sign publishing.publications.mavenJava
-    } else {
-        def keyId = System.getenv("GPG_KEY_ID")
-        def password = System.getenv("GPG_PASSPHRASE")
-        
-        if (keyId && password) {
-            useGpgCmd()
-            sign publishing.publications.mavenJava
+        maven {
+            name = "LocalMavenWithChecksums"
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
     }
 }
 
-// Add this task to check environment variables
-tasks.register('checkEnvVars') {
-    doLast {
-        // Check Maven credentials
-        def mavenUsername = System.getenv("MAVEN_USERNAME")
-        def mavenPassword = System.getenv("MAVEN_PASSWORD")
-        
-        println "=== Environment Variables Check ==="
-        println "MAVEN_USERNAME: ${mavenUsername ? 'Found' : 'NOT FOUND'}"
-        println "MAVEN_PASSWORD: ${mavenPassword ? 'Found' : 'NOT FOUND'}"
-        
-        // Check GitHub credentials
-        def githubActor = System.getenv("GITHUB_ACTOR")
-        def githubToken = System.getenv("GITHUB_TOKEN")
-        
-        println "GITHUB_ACTOR: ${githubActor ? 'Found' : 'NOT FOUND'}"
-        println "GITHUB_TOKEN: ${githubToken ? 'Found' : 'NOT FOUND'}"
-        
-        // Check GPG credentials
-        def gpgKeyId = System.getenv("GPG_KEY_ID")
-        def gpgPassphrase = System.getenv("GPG_PASSPHRASE")
-        
-        println "GPG_KEY_ID: ${gpgKeyId ? 'Found' : 'NOT FOUND'}"
-        println "GPG_PASSPHRASE: ${gpgPassphrase ? 'Found' : 'NOT FOUND'}"
-        println "==================================="
+// Replace your existing signing block with this:
+signing {
+    def keyId = System.getenv("GPG_KEY_ID")
+    def password = System.getenv("GPG_PASSPHRASE")
+    def keyFile = System.getenv("GPG_KEY_FILE")
+
+    if (keyId && password) {
+        // If using GPG command line
+        useGpgCmd()
+        sign publishing.publications.mavenJava
+    } else if (keyFile && password) {
+        // If using key file
+        def secretKeyRingFile = file(keyFile)
+        useInMemoryPgpKeys(secretKeyRingFile.text, password)
+        sign publishing.publications.mavenJava
+    } else if (project.hasProperty("signing.keyId")) {
+        // If using gradle.properties
+        sign publishing.publications.mavenJava
+    } else {
+        // Force signing for Maven Central
+        useGpgCmd()
+        sign publishing.publications.mavenJava
     }
 }
 
-// Make all publishing-related tasks depend on checkEnvVars
+// Ensure signing happens before publishing
 tasks.withType(PublishToMavenRepository) {
-    dependsOn 'checkEnvVars'
+    dependsOn tasks.withType(Sign)
 }
 
-tasks.withType(PublishToMavenLocal) {
-    dependsOn 'checkEnvVars'
-}
-
-// Also make the general publish task depend on it
-tasks.named('publish') {
-    dependsOn 'checkEnvVars'
-}
 
 // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
 repositories {
@@ -248,4 +243,112 @@ repositories {
     // Notice: This block does NOT have the same function as the block in the top level.
     // The repositories here will be used for publishing your artifact, not for
     // retrieving dependencies.
+}
+
+// Add checksums for remapped jars specifically
+tasks.named('remapJar') {
+    doLast {
+        ant.checksum algorithm: 'md5', file: archiveFile.get().asFile
+        ant.checksum algorithm: 'sha1', file: archiveFile.get().asFile
+    }
+}
+
+tasks.named('remapSourcesJar') {
+    doLast {
+        ant.checksum algorithm: 'md5', file: archiveFile.get().asFile
+        ant.checksum algorithm: 'sha1', file: archiveFile.get().asFile
+    }
+}
+
+// Add this task to copy the generated POM to build/libs
+tasks.register('copyPomToLibs', Copy) {
+    dependsOn 'generatePomFileForMavenJavaPublication'
+    from layout.buildDirectory.file('publications/mavenJava/pom-default.xml')
+    into layout.buildDirectory.dir('libs')
+    rename 'pom-default.xml', "${project.archives_base_name}-${project.version}.pom"
+    
+    doLast {
+        def pomFile = new File(layout.buildDirectory.dir('libs').get().asFile, "${project.archives_base_name}-${project.version}.pom")
+        if (pomFile.exists()) {
+            ant.checksum algorithm: 'md5', file: pomFile
+            ant.checksum algorithm: 'sha1', file: pomFile
+            println "Generated checksums for: ${pomFile.name}"
+        }
+    }
+}
+
+// Make build depend on copying the POM
+tasks.named('build') {
+    dependsOn 'copyPomToLibs'
+}
+
+// Add this task at the end of your build.gradle file
+tasks.register('publishAndTar', Tar) {
+    description = 'Publishes to local staging repository and creates a tar archive'
+    group = 'publishing'
+    
+    // First run the publish task
+    dependsOn 'publishMavenJavaPublicationToLocalMavenWithChecksumsRepository'
+    
+    // Configure the tar
+    from layout.buildDirectory.dir("staging-deploy")
+    into "${project.archives_base_name}-${project.version}-staging"
+    archiveFileName = "${project.archives_base_name}-${project.version}-staging.tar"
+    destinationDirectory = layout.buildDirectory.dir("distributions")
+    
+    // Ensure the staging directory exists before trying to tar it
+    doFirst {
+        def stagingDir = layout.buildDirectory.dir("staging-deploy").get().asFile
+        if (!stagingDir.exists()) {
+            throw new GradleException("Staging directory does not exist: ${stagingDir}")
+        }
+        println "Creating tar archive from: ${stagingDir}"
+        println "Output location: ${archiveFile.get().asFile}"
+    }
+    
+    doLast {
+        println "Tar archive created: ${archiveFile.get().asFile}"
+        println "Archive size: ${archiveFile.get().asFile.size()} bytes"
+    }
+}
+
+// Optional: Create a compressed tar.gz version
+tasks.register('publishAndTarGz', Tar) {
+    description = 'Publishes to local staging repository and creates a compressed tar.gz archive'
+    group = 'publishing'
+    
+    dependsOn 'publishMavenJavaPublicationToLocalMavenWithChecksumsRepository'
+    
+    from layout.buildDirectory.dir("staging-deploy")
+    into "${project.archives_base_name}-${project.version}-staging"
+    archiveFileName = "${project.archives_base_name}-${project.version}-staging.tar.gz"
+    destinationDirectory = layout.buildDirectory.dir("distributions")
+    compression = Compression.GZIP
+    
+    doFirst {
+        def stagingDir = layout.buildDirectory.dir("staging-deploy").get().asFile
+        if (!stagingDir.exists()) {
+            throw new GradleException("Staging directory does not exist: ${stagingDir}")
+        }
+        println "Creating compressed tar.gz archive from: ${stagingDir}"
+    }
+    
+    doLast {
+        println "Compressed tar.gz archive created: ${archiveFile.get().asFile}"
+        println "Archive size: ${archiveFile.get().asFile.size()} bytes"
+    }
+}
+tasks.register('createMavenBundle', Zip) {
+    description = 'Creates a Maven Central compatible bundle'
+    group = 'publishing'
+    
+    dependsOn 'publishMavenJavaPublicationToLocalMavenWithChecksumsRepository'
+    
+    from layout.buildDirectory.dir("staging-deploy")
+    archiveFileName = "${project.archives_base_name}-${project.version}-bundle.zip"
+    destinationDirectory = layout.buildDirectory.dir("distributions")
+    
+    doLast {
+        println "Maven bundle created: ${archiveFile.get().asFile}"
+    }
 }

@@ -22,19 +22,48 @@ import net.fabricmc.loader.api.ModContainer;
 
 import java.util.*;
 
+/**
+ * Manages a shared item group for enchanted books across different mods.
+ * This class handles the registration and display of enchanted books from authorized mods
+ * in a unified item group interface.
+ */
 public class EnchantmentItemGroup {
 
-    // This will store enchantments from different mods that want to be included in the shared group
+    /**
+     * Constructs a new EnchantmentItemGroup instance.
+     * This constructor is private to prevent instantiation as this class only provides static methods
+     * for managing the shared enchantment item group.
+     */
+    private EnchantmentItemGroup() {
+    }
+
+    /**
+     * Stores registered enchantments from different mods.
+     * Key is the mod ID, value is a list of enchantment entries from that mod.
+     */
     private static final Map<String, List<EnchantmentEntry>> REGISTERED_ENCHANTMENTS = new HashMap<>();
 
     // Add this to your SharedItemGroups class
+    /**
+     * Set of mod IDs that are authorized to register enchantments in the shared group.
+     * Only mods listed here can add their enchantments to the shared item group.
+     */
     private static final Set<String> AUTHORIZED_MOD_IDS = new HashSet<>(List.of(
             "murkys-many-fish"
             // Add more authorized mod IDs as needed
     ));
 
+    /**
+     * The shared item group that contains enchanted books from all registered and authorized mods.
+     * This group is registered with the game's item group registry using the mod's ID.
+     * <p>
+     * The group uses an enchanted book as its icon and displays a translatable name.
+     * All registered enchantments are added to this group through the {@link #addAllEnchantedBooks} method.
+     * <p>
+     * Only mods that are listed in {@link #AUTHORIZED_MOD_IDS} can register their enchantments
+     * to appear in this shared group.
+     */
     @SuppressWarnings("unused")
-    // Add all registered enchantments from different mods
     public static final ItemGroup SHARED_ENCHANTMENTS_GROUP = Registry.register(Registries.ITEM_GROUP,
             Identifier.of(MurkysManyAPIs.MOD_ID, "shared_enchantments"),
             FabricItemGroup.builder().icon(() -> new ItemStack(Items.ENCHANTED_BOOK))
@@ -42,6 +71,12 @@ public class EnchantmentItemGroup {
                     .entries(EnchantmentItemGroup::addAllEnchantedBooks).build());
 
 
+    /**
+     * Adds all registered enchanted books to the shared item group.
+     *
+     * @param displayContext The display context provided by the game
+     * @param entries        The entries collection to add items to
+     */
     private static void addAllEnchantedBooks(ItemGroup.DisplayContext displayContext, ItemGroup.Entries entries) {
         var enchantmentRegistry = displayContext.lookup().getOrThrow(RegistryKeys.ENCHANTMENT);
 
@@ -58,6 +93,14 @@ public class EnchantmentItemGroup {
         }
     }
 
+    /**
+     * Creates an enchanted book ItemStack with the specified enchantment and level.
+     *
+     * @param enchantmentRegistry The registry wrapper containing enchantment data
+     * @param enchantmentKey      The registry key of the enchantment to apply
+     * @param level               The level of the enchantment
+     * @return An ItemStack containing the enchanted book
+     */
     private static ItemStack createEnchantedBook(net.minecraft.registry.RegistryWrapper<Enchantment> enchantmentRegistry,
                                                  RegistryKey<Enchantment> enchantmentKey, int level) {
         ItemStack book = new ItemStack(Items.ENCHANTED_BOOK);
@@ -99,17 +142,37 @@ public class EnchantmentItemGroup {
         return true;
     }
 
+    /**
+     * Initializes and registers all shared item groups.
+     * Called during mod initialization.
+     */
     public static void registerItemGroups() {
         MurkysManyAPIs.LOGGER.info("Registering Shared Item Groups");
     }
 
+
     /**
-     * Class to store information about an enchantment to be added to the shared group
+     * Represents an enchantment entry in the shared enchantment system.
+     * This class holds information about an enchantment and its maximum level
+     * that can be displayed in the shared enchantment item group.
      */
     public static class EnchantmentEntry {
+        /**
+         * The registry key that uniquely identifies this enchantment
+         */
         private final RegistryKey<Enchantment> enchantmentKey;
+
+        /**
+         * The maximum level allowed for this enchantment
+         */
         private final int maxLevel;
 
+        /**
+         * Creates a new enchantment entry.
+         *
+         * @param enchantmentKey The registry key of the enchantment
+         * @param maxLevel       The maximum level this enchantment can reach
+         */
         public EnchantmentEntry(RegistryKey<Enchantment> enchantmentKey, int maxLevel) {
             this.enchantmentKey = enchantmentKey;
             this.maxLevel = maxLevel;
