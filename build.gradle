@@ -206,28 +206,22 @@ publishing {
     }
 }
 
-// Replace your existing signing block with this:
+// Replace your existing signing block with this corrected version:
 signing {
-    def keyId = System.getenv("GPG_KEY_ID")
-    def password = System.getenv("GPG_PASSPHRASE")
-    def keyFile = System.getenv("GPG_KEY_FILE")
+    // Simple approach - use gradle.properties or environment variables
+    def keyId = System.getenv("GPG_KEY_ID") ?: project.findProperty("signing.keyId")
+    def password = System.getenv("GPG_PASSPHRASE") ?: project.findProperty("signing.password")
 
     if (keyId && password) {
-        // If using GPG command line
         useGpgCmd()
         sign publishing.publications.mavenJava
-    } else if (keyFile && password) {
-        // If using key file
-        def secretKeyRingFile = file(keyFile)
-        useInMemoryPgpKeys(secretKeyRingFile.text, password)
-        sign publishing.publications.mavenJava
-    } else if (project.hasProperty("signing.keyId")) {
-        // If using gradle.properties
-        sign publishing.publications.mavenJava
+        println "✓ Using GPG command line for signing with keyId: ${keyId}"
     } else {
-        // Force signing for Maven Central
-        useGpgCmd()
-        sign publishing.publications.mavenJava
+        println "✗ Warning: No signing configuration found"
+        println "  GPG_KEY_ID (env): ${System.getenv('GPG_KEY_ID') ? 'SET' : 'NOT SET'}"
+        println "  GPG_PASSPHRASE (env): ${System.getenv('GPG_PASSPHRASE') ? 'SET' : 'NOT SET'}"
+        println "  signing.keyId (props): ${project.findProperty('signing.keyId') ? 'SET' : 'NOT SET'}"
+        println "  signing.password (props): ${project.findProperty('signing.password') ? 'SET' : 'NOT SET'}"
     }
 }
 
@@ -350,5 +344,6 @@ tasks.register('createMavenBundle', Zip) {
     
     doLast {
         println "Maven bundle created: ${archiveFile.get().asFile}"
+        println "Upload this file to Maven Central Portal"
     }
 }
